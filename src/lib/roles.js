@@ -1,10 +1,10 @@
 // src/lib/roles.js
-// FIXED VERSION - Visitor tidak punya role (public access)
+// FIXED VERSION - Next.js 15 compatible dengan async cookies()
 
 import { cookies } from 'next/headers';
 import jwt from 'jsonwebtoken';
 
-// Role constants - VISITOR DIHAPUS karena public
+// Role constants
 export const ROLES = {
   MEMBER: 2,
   STAF: 3,
@@ -22,12 +22,13 @@ export const ROLE_NAMES = {
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key-change-in-production';
 
 /**
+ * ✅ FIXED: Tambah async dan await cookies()
  * Get role from request
  * Returns role_id or null if not authenticated
  */
-export function getRoleFromRequest(req) {
+export async function getRoleFromRequest(req) {
   try {
-    const cookieStore = cookies();
+    const cookieStore = await cookies(); // ✅ TAMBAH AWAIT!
     
     // Try different cookie names
     let token = cookieStore.get('token')?.value || 
@@ -35,8 +36,8 @@ export function getRoleFromRequest(req) {
                 cookieStore.get('auth-token')?.value ||
                 cookieStore.get('jwt')?.value;
     
-    // Check Authorization header
-    if (!token) {
+    // Check Authorization header (jika ada)
+    if (!token && req?.headers) {
       const authHeader = req.headers.get('authorization');
       if (authHeader?.startsWith('Bearer ')) {
         token = authHeader.substring(7);
@@ -70,11 +71,12 @@ export function getRoleFromRequest(req) {
 }
 
 /**
+ * ✅ FIXED: Tambah async
  * Require specific roles
  * Returns { ok: boolean, role?: number, error?: string }
  */
-export function requireRole(req, allowedRoles = []) {
-  const userRole = getRoleFromRequest(req);
+export async function requireRole(req, allowedRoles = []) {
+  const userRole = await getRoleFromRequest(req); // ✅ TAMBAH AWAIT!
   
   console.log('🔐 Auth Check:', {
     userRole,
@@ -109,30 +111,33 @@ export function requireRole(req, allowedRoles = []) {
 }
 
 /**
+ * ✅ FIXED: Tambah async
  * Check if user has any of the roles
  */
-export function hasAnyRole(req, roles = []) {
-  const userRole = getRoleFromRequest(req);
+export async function hasAnyRole(req, roles = []) {
+  const userRole = await getRoleFromRequest(req); // ✅ TAMBAH AWAIT!
   return userRole && roles.includes(userRole);
 }
 
 /**
+ * ✅ FIXED: Tambah async
  * Check if user is admin
  */
-export function isAdmin(req) {
-  return getRoleFromRequest(req) === ROLES.ADMIN;
+export async function isAdmin(req) {
+  return (await getRoleFromRequest(req)) === ROLES.ADMIN; // ✅ TAMBAH AWAIT!
 }
 
 /**
+ * ✅ FIXED: Tambah async
  * Check if user is staff or admin
  */
-export function isStaffOrAdmin(req) {
-  const role = getRoleFromRequest(req);
+export async function isStaffOrAdmin(req) {
+  const role = await getRoleFromRequest(req); // ✅ TAMBAH AWAIT!
   return role === ROLES.STAF || role === ROLES.ADMIN;
 }
 
 /**
- * Create JWT token (for login)
+ * Create JWT token (for login) - INI TETAP SYNC
  */
 export function createToken(user) {
   return jwt.sign(
@@ -148,7 +153,7 @@ export function createToken(user) {
 }
 
 /**
- * Get user info from token without validation
+ * Get user info from token without validation - INI TETAP SYNC
  */
 export function decodeToken(token) {
   try {

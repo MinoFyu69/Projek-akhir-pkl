@@ -1,3 +1,5 @@
+// src\app\api\admin\roles\route.js
+
 import { NextResponse } from 'next/server';
 import { getDb, initDb } from '@/lib/db';
 

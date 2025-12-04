@@ -1,13 +1,11 @@
-// src/app/api/visitor/books/route.js
 import { NextResponse } from 'next/server';
 import { getDb, initDb } from '@/lib/db';
 
-export async function GET(req) {
+export async function GET() {
   try {
     await initDb();
     const db = getDb();
     
-    // ✅ PUBLIC - No auth check
     const result = await db.query(`
       SELECT 
         b.id,
@@ -21,12 +19,12 @@ export async function GET(req) {
         b.stok_tersedia as stock,
         b.stok_total as total_stock,
         b.sampul_buku as cover,
-        b.genre_id as genreId,
-        b.created_at as createdAt,
+        b.genre_id as "genreId",
+        b.created_at as "createdAt",
         g.nama_genre as genre_name
       FROM buku b
       LEFT JOIN genre g ON b.genre_id = g.id
-      WHERE b.is_approved = true
+      WHERE b.status = 'approved'
       ORDER BY b.created_at DESC
     `);
     
@@ -35,10 +33,9 @@ export async function GET(req) {
     
   } catch (error) {
     console.error('❌ Visitor Books API Error:', error);
-    return NextResponse.json({
-      success: false,
-      message: 'Error fetching books',
-      error: error.message
-    }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
   }
 }

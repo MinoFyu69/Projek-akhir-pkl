@@ -35,16 +35,16 @@ export default function LoginPage() {
         // Redirect based on role
         switch (data.user.role_id) {
           case 4: // Admin
-            router.push('/Admin/dashboard');
+            router.push('/admin/dashboard');
             break;
           case 3: // Staf
-            router.push('/Staf/dashboard');
+            router.push('/staf/dashboard');
             break;
           case 2: // Member
-            router.push('/Member/dashboard');
+            router.push('/member/dashboard');
             break;
           default:
-            router.push('/Visitor');
+            router.push('/visitor');
         }
       } else {
         setError(data.message || 'Login gagal');
@@ -140,10 +140,10 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* Username */}
+              {/* Username or Email */}
               <div className="space-y-2 animate-slide-in" style={{ animationDelay: '100ms' }}>
                 <label className="block text-sm font-semibold text-gray-300">
-                  Username
+                  Username atau Email
                 </label>
                 <div className="relative group">
                   <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl opacity-0 group-hover:opacity-50 blur transition-opacity"></div>
@@ -154,7 +154,7 @@ export default function LoginPage() {
                       value={formData.username}
                       onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                       className="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
-                      placeholder="Masukkan username"
+                      placeholder="Username atau email@example.com"
                       required
                     />
                   </div>

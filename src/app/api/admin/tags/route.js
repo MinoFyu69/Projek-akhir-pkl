@@ -27,7 +27,7 @@ export async function GET() {
 }
 
 export async function POST(req) {
-  const { ok } = requireRole(req, [ROLES.ADMIN]);
+  const { ok } = await requireRole(req, [ROLES.ADMIN]);
   if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   
   await initDb();
@@ -59,7 +59,7 @@ export async function POST(req) {
 }
 
 export async function PUT(req) {
-  const { ok } = requireRole(req, [ROLES.ADMIN]);
+  const { ok } = await requireRole(req, [ROLES.ADMIN]);
   if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   
   await initDb();
@@ -96,7 +96,7 @@ export async function PUT(req) {
 }
 
 export async function DELETE(req) {
-  const { ok } = requireRole(req, [ROLES.ADMIN]);
+  const { ok } = await requireRole(req, [ROLES.ADMIN]);
   if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   
   await initDb();

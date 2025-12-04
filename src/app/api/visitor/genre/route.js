@@ -1,4 +1,3 @@
-// src/app/api/visitor/genre/route.js
 import { NextResponse } from 'next/server';
 import { getDb, initDb } from '@/lib/db';
 
@@ -7,7 +6,6 @@ export async function GET(req) {
     await initDb();
     const db = getDb();
     
-    // ✅ PUBLIC - No auth check
     const result = await db.query(`
       SELECT 
         id,
