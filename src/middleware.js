@@ -1,5 +1,4 @@
 // src/middleware.js
-// FIXED: Visitor route is PUBLIC (no auth required)
 import { NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 
@@ -37,7 +36,7 @@ const ROUTE_PERMISSIONS = {
   '/api/admin': [ROLES.ADMIN],
   '/api/staf': [ROLES.STAF, ROLES.ADMIN],
   '/api/member': [ROLES.MEMBER, ROLES.STAF, ROLES.ADMIN],
-  '/api/peminjaman': [ROLES.MEMBER, ROLES.STAF, ROLES.ADMIN]
+  '/api/peminjaman': [ROLES.MEMBER, ROLES.STAF, ROLES.ADMIN]  // ✅ REQUIRES AUTH
 };
 
 export async function middleware(request) {
@@ -64,6 +63,15 @@ export async function middleware(request) {
 
   if (!token) {
     console.log('⚠️  No token, redirecting to login:', pathname);
+    
+    // For API routes, return 401 instead of redirect
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { message: 'Unauthorized - No token' },
+        { status: 401 }
+      );
+    }
+    
     const loginUrl = new URL('/login', request.url);
     return NextResponse.redirect(loginUrl);
   }
@@ -94,7 +102,15 @@ export async function middleware(request) {
             allowedRoles
           });
           
-          // Redirect based on user role
+          // For API routes, return 403
+          if (pathname.startsWith('/api/')) {
+            return NextResponse.json(
+              { message: 'Forbidden - Insufficient permissions' },
+              { status: 403 }
+            );
+          }
+          
+          // For page routes, redirect based on user role
           let redirectUrl;
           switch (userRole) {
             case ROLES.ADMIN:
@@ -123,7 +139,15 @@ export async function middleware(request) {
   } catch (error) {
     console.error('❌ Token verification failed:', error.message);
     
-    // Invalid token - clear cookie and redirect to login
+    // For API routes, return 401
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { message: 'Unauthorized - Invalid token' },
+        { status: 401 }
+      );
+    }
+    
+    // For page routes, clear cookie and redirect to login
     const response = NextResponse.redirect(new URL('/login', request.url));
     response.cookies.delete('token');
     return response;

@@ -1,67 +1,86 @@
-// D:\Projek Coding\projek_pkl\src\app\api\admin\peminjaman\route.js
-// FIXED: Removed manual stock update (let trigger handle it), added better validation
-
+// src/app/api/peminjaman/route.js
 import { NextResponse } from 'next/server';
 import { getDb, initDb, withTransaction } from '@/lib/db';
 import { requireRole, ROLES } from '@/lib/roles';
 
+// GET - Ambil semua peminjaman (filtered by role)
 export async function GET(req) {
-  const { ok } = await requireRole(req, [ROLES.ADMIN]);
+  const { ok, user } = await requireRole(req, [ROLES.MEMBER, ROLES.STAF, ROLES.ADMIN]);
   if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-  
+
   await initDb();
   const db = getDb();
-  
+
   try {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('user_id');
-    const bukuId = searchParams.get('buku_id');
     const status = searchParams.get('status');
-    
+    const userId = searchParams.get('user_id');
+
     let query = `
       SELECT 
         p.*,
         u.username,
         u.nama_lengkap,
-        b.judul,
-        b.penulis,
-        g.nama_genre
+        u.email,
+        b.judul as buku_judul,
+        b.penulis as buku_penulis,
+        b.sampul_buku,
+        CASE 
+          WHEN p.status = 'dipinjam' AND p.tanggal_kembali_target < CURRENT_TIMESTAMP 
+          THEN EXTRACT(DAY FROM CURRENT_TIMESTAMP - p.tanggal_kembali_target)
+          ELSE 0
+        END as hari_terlambat
       FROM peminjaman p
       JOIN users u ON p.user_id = u.id
       JOIN buku b ON p.buku_id = b.id
-      LEFT JOIN genre g ON b.genre_id = g.id
+      WHERE 1=1
     `;
-    
+
     const params = [];
-    const conditions = [];
     let paramCount = 0;
-    
-    if (userId) {
+
+    // Member hanya bisa lihat peminjaman sendiri
+    if (user.role_id === ROLES.MEMBER) {
       paramCount++;
-      conditions.push(`p.user_id = $${paramCount}`);
+      query += ` AND p.user_id = $${paramCount}`;
+      params.push(user.userId);
+    } else if (userId) {
+      // Staf/Admin bisa filter by user
+      paramCount++;
+      query += ` AND p.user_id = $${paramCount}`;
       params.push(userId);
     }
-    if (bukuId) {
-      paramCount++;
-      conditions.push(`p.buku_id = $${paramCount}`);
-      params.push(bukuId);
-    }
+
     if (status) {
       paramCount++;
-      conditions.push(`p.status = $${paramCount}`);
+      query += ` AND p.status = $${paramCount}`;
       params.push(status);
     }
-    
-    if (conditions.length > 0) {
-      query += ` WHERE ${conditions.join(' AND ')}`;
-    }
-    
+
     query += ` ORDER BY p.created_at DESC`;
-    
+
     const result = await db.query(query, params);
-    
-    console.log('✅ Peminjaman fetched:', result.rows.length);
-    return NextResponse.json(result.rows);
+
+    // Hitung denda otomatis untuk yang terlambat
+    const dataWithDenda = result.rows.map(row => {
+      if (row.status === 'dipinjam' && row.hari_terlambat > 0) {
+        const dendaPerHari = 2000; // Default Rp 2000/hari
+        const dendaOtomatis = row.hari_terlambat * dendaPerHari;
+        return {
+          ...row,
+          denda_otomatis: dendaOtomatis,
+          total_denda: row.denda || dendaOtomatis
+        };
+      }
+      return {
+        ...row,
+        denda_otomatis: 0,
+        total_denda: row.denda || 0
+      };
+    });
+
+    console.log('✅ Peminjaman fetched:', dataWithDenda.length);
+    return NextResponse.json(dataWithDenda);
   } catch (error) {
     console.error('❌ Error fetching peminjaman:', error);
     return NextResponse.json({ 
@@ -71,147 +90,254 @@ export async function GET(req) {
   }
 }
 
-export async function PUT(req) {
-  const { ok } = await requireRole(req, [ROLES.ADMIN]);
-  if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-  
+// POST - Member request peminjaman buku
+export async function POST(req) {
+  const { ok, user } = await requireRole(req, [ROLES.MEMBER]);
+  if (!ok) return NextResponse.json({ message: 'Forbidden - Member only' }, { status: 403 });
+
   await initDb();
   const db = getDb();
-  
+
   try {
     const body = await req.json();
-    const { id, status, catatan, denda } = body || {};
-    
-    if (!id) {
-      return NextResponse.json({ message: 'ID diperlukan' }, { status: 400 });
+    const { buku_id, durasi_hari = 7 } = body;
+
+    if (!buku_id) {
+      return NextResponse.json({ 
+        message: 'buku_id diperlukan' 
+      }, { status: 400 });
     }
 
-    await withTransaction(async (client) => {
-      // Get current peminjaman
-      const currentResult = await client.query(
-        `SELECT * FROM peminjaman WHERE id = $1`, 
-        [id]
-      );
-      
-      if (currentResult.rows.length === 0) {
-        throw new Error('Peminjaman tidak ditemukan');
-      }
-      
-      const current = currentResult.rows[0];
+    // Use user_id from token
+    const user_id = user.userId;
 
-      // Validate status transition
-      if (status === 'dikembalikan' && current.status === 'dikembalikan') {
-        throw new Error('Buku sudah dikembalikan sebelumnya');
-      }
+    // Cek stok buku
+    const bukuResult = await db.query(
+      `SELECT stok_tersedia, judul, status FROM buku WHERE id = $1`,
+      [buku_id]
+    );
 
-      // Update peminjaman - TRIGGER akan handle stock update otomatis
-      if (status === 'dikembalikan') {
-        await client.query(`
-          UPDATE peminjaman 
-          SET status = $1, 
-              tanggal_kembali_aktual = CURRENT_TIMESTAMP, 
-              catatan = $2, 
-              denda = $3, 
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $4
-        `, [status, catatan || current.catatan, denda || 0, id]);
-        
-        console.log('✅ Buku returned, stock will be updated by trigger');
-      } else if (status) {
-        await client.query(`
-          UPDATE peminjaman 
-          SET status = $1, 
-              catatan = $2, 
-              denda = $3, 
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $4
-        `, [status, catatan || current.catatan, denda !== undefined ? denda : current.denda, id]);
-      } else {
-        // Update only catatan and denda
-        await client.query(`
-          UPDATE peminjaman 
-          SET catatan = $1, 
-              denda = $2, 
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $3
-        `, [catatan || current.catatan, denda !== undefined ? denda : current.denda, id]);
-      }
-    });
+    if (bukuResult.rows.length === 0) {
+      return NextResponse.json({ message: 'Buku tidak ditemukan' }, { status: 404 });
+    }
 
-    // Fetch updated peminjaman with all details
-    const result = await db.query(`
-      SELECT 
-        p.*,
-        u.username,
-        u.nama_lengkap,
-        b.judul,
-        b.penulis,
-        g.nama_genre
-      FROM peminjaman p
-      JOIN users u ON p.user_id = u.id
-      JOIN buku b ON p.buku_id = b.id
-      LEFT JOIN genre g ON b.genre_id = g.id
-      WHERE p.id = $1
-    `, [id]);
-    
-    console.log('✅ Peminjaman updated, ID:', id);
-    return NextResponse.json(result.rows[0]);
+    const buku = bukuResult.rows[0];
+
+    if (buku.status !== 'approved') {
+      return NextResponse.json({ message: 'Buku belum disetujui' }, { status: 400 });
+    }
+
+    if (buku.stok_tersedia < 1) {
+      return NextResponse.json({ message: 'Stok buku habis' }, { status: 400 });
+    }
+
+    // Cek apakah user masih punya peminjaman aktif untuk buku yang sama
+    const activeResult = await db.query(
+      `SELECT id FROM peminjaman 
+       WHERE user_id = $1 AND buku_id = $2 
+       AND status IN ('pending', 'dipinjam')`,
+      [user_id, buku_id]
+    );
+
+    if (activeResult.rows.length > 0) {
+      return NextResponse.json({ 
+        message: 'Anda masih memiliki peminjaman aktif untuk buku ini' 
+      }, { status: 400 });
+    }
+
+    // Calculate tanggal kembali target
+    const tanggalKembaliTarget = new Date();
+    tanggalKembaliTarget.setDate(tanggalKembaliTarget.getDate() + durasi_hari);
+
+    // Insert peminjaman dengan status pending
+    const insertResult = await db.query(`
+      INSERT INTO peminjaman (
+        user_id, buku_id, 
+        tanggal_kembali_target,
+        status,
+        catatan
+      ) VALUES ($1, $2, $3, 'pending', $4)
+      RETURNING *
+    `, [
+      user_id, 
+      buku_id, 
+      tanggalKembaliTarget.toISOString(),
+      `Durasi peminjaman: ${durasi_hari} hari`
+    ]);
+
+    console.log('✅ Peminjaman request created:', insertResult.rows[0].id);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Request peminjaman berhasil. Menunggu approval dari staf/admin.',
+      data: insertResult.rows[0]
+    }, { status: 201 });
+
   } catch (error) {
-    console.error('❌ Error updating peminjaman:', error);
+    console.error('❌ Error creating peminjaman:', error);
     return NextResponse.json({ 
-      message: error.message || 'Update gagal', 
+      message: 'Gagal membuat request peminjaman', 
       error: error.message 
     }, { status: 500 });
   }
 }
 
+// PUT - Staf/Admin approve/reject peminjaman atau update denda
+export async function PUT(req) {
+  const { ok } = await requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
+  if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+
+  await initDb();
+  const db = getDb();
+
+  try {
+    const body = await req.json();
+    const { id, action, denda, catatan } = body;
+
+    if (!id) {
+      return NextResponse.json({ message: 'ID peminjaman diperlukan' }, { status: 400 });
+    }
+
+    // Get current peminjaman
+    const currentResult = await db.query(
+      `SELECT p.*, b.stok_tersedia 
+       FROM peminjaman p 
+       JOIN buku b ON p.buku_id = b.id 
+       WHERE p.id = $1`,
+      [id]
+    );
+
+    if (currentResult.rows.length === 0) {
+      return NextResponse.json({ message: 'Peminjaman tidak ditemukan' }, { status: 404 });
+    }
+
+    const current = currentResult.rows[0];
+
+    await withTransaction(async (client) => {
+      if (action === 'approve') {
+        if (current.status !== 'pending') {
+          throw new Error('Hanya peminjaman pending yang bisa diapprove');
+        }
+
+        if (current.stok_tersedia < 1) {
+          throw new Error('Stok buku tidak tersedia');
+        }
+
+        await client.query(`
+          UPDATE peminjaman 
+          SET status = 'dipinjam', 
+              tanggal_pinjam = CURRENT_TIMESTAMP,
+              catatan = $1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [catatan || 'Peminjaman disetujui', id]);
+
+        // Trigger will handle stock update
+        console.log('✅ Peminjaman approved, ID:', id);
+      } 
+      else if (action === 'reject') {
+        if (current.status !== 'pending') {
+          throw new Error('Hanya peminjaman pending yang bisa direject');
+        }
+
+        await client.query(`
+          UPDATE peminjaman 
+          SET status = 'rejected', 
+              catatan = $1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [catatan || 'Peminjaman ditolak', id]);
+
+        console.log('✅ Peminjaman rejected, ID:', id);
+      }
+      else if (action === 'return') {
+        if (current.status !== 'dipinjam') {
+          throw new Error('Hanya peminjaman aktif yang bisa dikembalikan');
+        }
+
+        await client.query(`
+          UPDATE peminjaman 
+          SET status = 'dikembalikan',
+              tanggal_kembali_aktual = CURRENT_TIMESTAMP,
+              denda = $1,
+              catatan = $2,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $3
+        `, [denda || 0, catatan || 'Buku dikembalikan', id]);
+
+        // Trigger will handle stock update
+        console.log('✅ Buku returned, ID:', id);
+      }
+      else if (action === 'update_denda') {
+        await client.query(`
+          UPDATE peminjaman 
+          SET denda = $1, 
+              catatan = $2,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $3
+        `, [denda || 0, catatan || 'Denda diupdate', id]);
+
+        console.log('✅ Denda updated, ID:', id);
+      }
+      else {
+        throw new Error('Action tidak valid: approve, reject, return, atau update_denda');
+      }
+    });
+
+    // Fetch updated data
+    const result = await db.query(
+      `SELECT p.*, u.username, b.judul as buku_judul 
+       FROM peminjaman p
+       JOIN users u ON p.user_id = u.id
+       JOIN buku b ON p.buku_id = b.id
+       WHERE p.id = $1`,
+      [id]
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: `Peminjaman ${action} berhasil`,
+      data: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating peminjaman:', error);
+    return NextResponse.json({ 
+      message: error.message || 'Gagal update peminjaman', 
+      error: error.message 
+    }, { status: 500 });
+  }
+}
+
+// DELETE - Admin only (hard delete)
 export async function DELETE(req) {
   const { ok } = await requireRole(req, [ROLES.ADMIN]);
   if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-  
+
   await initDb();
   const db = getDb();
-  
+
   try {
     const { searchParams } = new URL(req.url);
     const id = Number(searchParams.get('id'));
-    
+
     if (!id) {
       return NextResponse.json({ message: 'ID diperlukan' }, { status: 400 });
     }
-    
-    await withTransaction(async (client) => {
-      // Get peminjaman details
-      const currentResult = await client.query(
-        `SELECT * FROM peminjaman WHERE id = $1`, 
-        [id]
-      );
-      
-      if (currentResult.rows.length === 0) {
-        throw new Error('Peminjaman tidak ditemukan');
-      }
-      
-      const current = currentResult.rows[0];
-      
-      // If still borrowed, return the stock
-      if (current.status === 'dipinjam') {
-        await client.query(
-          `UPDATE buku SET stok_tersedia = stok_tersedia + 1 WHERE id = $1`, 
-          [current.buku_id]
-        );
-        console.log('✅ Stock returned for borrowed book before deletion');
-      }
-      
-      // Delete the peminjaman record
-      await client.query(`DELETE FROM peminjaman WHERE id = $1`, [id]);
-    });
-    
+
+    const result = await db.query(`DELETE FROM peminjaman WHERE id = $1`, [id]);
+
+    if (result.rowCount === 0) {
+      return NextResponse.json({ message: 'Peminjaman tidak ditemukan' }, { status: 404 });
+    }
+
     console.log('✅ Peminjaman deleted, ID:', id);
     return NextResponse.json({ success: true });
+
   } catch (error) {
     console.error('❌ Error deleting peminjaman:', error);
     return NextResponse.json({ 
-      message: error.message || 'Delete gagal', 
+      message: 'Gagal hapus peminjaman', 
       error: error.message 
     }, { status: 500 });
   }

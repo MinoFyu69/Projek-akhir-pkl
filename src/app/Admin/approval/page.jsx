@@ -157,7 +157,7 @@ export default function ApprovalBukuPage() {
 
   const fetchPendingBooks = async () => {
     try {
-      const response = await fetch('/api/admin/buku-pending?status=pending');
+      const response = await fetch('/api/admin/buku?status=pending');
       const data = await response.json();
       console.log('Pending books data:', data); // Debug log
       setPendingBooks(Array.isArray(data) ? data : []);
@@ -171,7 +171,7 @@ export default function ApprovalBukuPage() {
 
   const handleApprove = async (bookId, catatan) => {
     try {
-      const response = await fetch('/api/admin/buku-pending', {
+      const response = await fetch('/api/admin/buku?status=pending', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -193,7 +193,7 @@ export default function ApprovalBukuPage() {
 
   const handleReject = async (bookId, catatan) => {
     try {
-      const response = await fetch('/api/admin/buku-pending', {
+      const response = await fetch('/api/admin/buku?status=pending', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

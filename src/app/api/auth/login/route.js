@@ -9,7 +9,7 @@ export async function POST(req) {
     const db = getDb();
     const { username, password } = await req.json();
     
-    console.log('🔐 Login attempt:', { username });
+    console.log('🔍 Login attempt:', { username });
     
     if (!username || !password) {
       return NextResponse.json({ 
@@ -18,7 +18,6 @@ export async function POST(req) {
       }, { status: 400 });
     }
 
-    // ✅ Cek apakah input adalah email atau username
     const isEmail = username.includes('@');
     const query = isEmail 
       ? 'SELECT u.id, u.username, u.email, u.password, u.nama_lengkap, u.role_id, u.is_active, r.nama_role FROM users u LEFT JOIN roles r ON u.role_id = r.id WHERE u.email = $1 LIMIT 1'
@@ -45,10 +44,9 @@ export async function POST(req) {
       }, { status: 403 });
     }
 
-    // ✅ Verify password
-    console.log('🔑 Verifying password...');
+    console.log('🔐 Verifying password...');
     const passwordOk = await verifyPassword(password, user.password);
-    console.log('🔑 Password check result:', passwordOk);
+    console.log('🔐 Password check result:', passwordOk);
     
     if (!passwordOk) {
       console.log('❌ Password salah untuk user:', user.username);
@@ -62,7 +60,8 @@ export async function POST(req) {
     const payload = { 
       sub: String(user.id),
       userId: user.id,
-      role: user.nama_role || 'visitor', 
+      role: user.nama_role || 'visitor',
+      role_id: user.role_id, // ✅ PENTING: untuk middleware
       username: user.username 
     };
     
@@ -70,10 +69,12 @@ export async function POST(req) {
     
     console.log('✅ Login berhasil:', { 
       username: user.username, 
-      role: payload.role 
+      role: payload.role,
+      role_id: payload.role_id 
     });
 
-    return NextResponse.json({
+    // ✅ CRITICAL FIX: Simpan token ke cookie
+    const response = NextResponse.json({
       success: true,
       accessToken: token,
       token: token,
@@ -84,9 +85,19 @@ export async function POST(req) {
         email: user.email, 
         nama_lengkap: user.nama_lengkap,
         role: payload.role,
-        role_id: user.role_id // ✅ Tambahkan role_id untuk routing
+        role_id: user.role_id
       }
     });
+
+    // Set cookie dengan token
+    response.cookies.set('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7200 // 2 hours
+    });
+
+    return response;
     
   } catch (error) {
     console.error('💥 Login error:', error);

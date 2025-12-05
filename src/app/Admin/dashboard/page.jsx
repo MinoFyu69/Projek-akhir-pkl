@@ -81,36 +81,36 @@ export default function AdminDashboard() {
   }, []);
 
   const fetchDashboardData = async () => {
-    try {
-      // Fetch books
-      const booksRes = await fetch('/api/admin/buku');
-      const books = await booksRes.json();
-      
-      // Fetch users
-      const usersRes = await fetch('/api/admin/users');
-      const users = await usersRes.json();
-      
-      // Fetch peminjaman
-      const peminjamanRes = await fetch('/api/admin/peminjaman?status=dipinjam');
-      const peminjaman = await peminjamanRes.json();
-      
-      // Fetch pending approvals
-      const approvalsRes = await fetch('/api/admin/buku-pending?status=pending');
-      const approvals = await approvalsRes.json();
+  try {
+    // Fetch books
+    const booksRes = await fetch('/api/admin/buku');
+    const books = await booksRes.json();
+    
+    // Fetch users
+    const usersRes = await fetch('/api/admin/users');
+    const users = await usersRes.json();
+    
+    // Fetch peminjaman
+    const peminjamanRes = await fetch('/api/admin/peminjaman?status=dipinjam');
+    const peminjaman = await peminjamanRes.json();
+    
+    // ✅ FIX: Fetch pending approvals menggunakan endpoint yang sama
+    const approvalsRes = await fetch('/api/admin/buku?status=pending');
+    const approvals = await approvalsRes.json();
 
-      setStats({
-        totalBooks: books.length || 0,
-        totalUsers: users.length || 0,
-        activeBorrowings: peminjaman.length || 0,
-        pendingApprovals: approvals.length || 0
-      });
-      
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      setLoading(false);
-    }
-  };
+    setStats({
+      totalBooks: Array.isArray(books) ? books.length : 0,
+      totalUsers: Array.isArray(users) ? users.length : 0,
+      activeBorrowings: Array.isArray(peminjaman) ? peminjaman.length : 0,
+      pendingApprovals: Array.isArray(approvals) ? approvals.length : 0
+    });
+    
+    setLoading(false);
+  } catch (error) {
+    console.error('Error fetching dashboard data:', error);
+    setLoading(false);
+  }
+};
 
   const recentActivities = [
     { icon: CheckCircle, title: 'Buku "Laskar Pelangi" dikembalikan', time: '5 menit yang lalu', color: 'bg-green-500' },

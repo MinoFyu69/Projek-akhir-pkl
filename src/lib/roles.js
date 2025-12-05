@@ -76,7 +76,7 @@ export async function getRoleFromRequest(req) {
  * Returns { ok: boolean, role?: number, error?: string }
  */
 export async function requireRole(req, allowedRoles = []) {
-  const userRole = await getRoleFromRequest(req); // ✅ TAMBAH AWAIT!
+  const userRole = await getRoleFromRequest(req);
   
   console.log('🔐 Auth Check:', {
     userRole,
@@ -87,6 +87,7 @@ export async function requireRole(req, allowedRoles = []) {
   
   // Not authenticated
   if (!userRole) {
+    console.log('❌ RETURN: Not authenticated'); // ← TAMBAH INI
     return { 
       ok: false, 
       error: 'Not authenticated',
@@ -96,6 +97,7 @@ export async function requireRole(req, allowedRoles = []) {
   
   // Not authorized (wrong role)
   if (!allowedRoles.includes(userRole)) {
+    console.log('❌ RETURN: Forbidden -', userRole, 'not in', allowedRoles); // ← TAMBAH INI
     return { 
       ok: false, 
       error: 'Forbidden',
@@ -104,6 +106,7 @@ export async function requireRole(req, allowedRoles = []) {
   }
   
   // Authorized
+  console.log('✅ RETURN: Authorized -', ROLE_NAMES[userRole]); // ← TAMBAH INI
   return { 
     ok: true, 
     role: userRole 

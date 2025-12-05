@@ -30,166 +30,142 @@ export function getDb() {
 
 export async function initDb() {
 	const db = getDb();
-	// Tables: roles, users, genre, tags, buku, buku_tags, buku_pending, buku_pending_tags, peminjaman
-	await db.query(`
-		-- Tabel untuk menyimpan roles
-		CREATE TABLE IF NOT EXISTS roles (
-			id SERIAL PRIMARY KEY,
-			nama_role VARCHAR(50) NOT NULL UNIQUE,
-			deskripsi TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
+	
+	try {
+		await db.query(`
+			-- Tabel untuk menyimpan roles
+			CREATE TABLE IF NOT EXISTS roles (
+				id SERIAL PRIMARY KEY,
+				nama_role VARCHAR(50) NOT NULL UNIQUE,
+				deskripsi TEXT,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
 
-		-- Tabel untuk menyimpan users
-		CREATE TABLE IF NOT EXISTS users (
-			id SERIAL PRIMARY KEY,
-			username VARCHAR(100) NOT NULL UNIQUE,
-			email VARCHAR(100) NOT NULL UNIQUE,
-			password VARCHAR(255) NOT NULL,
-			nama_lengkap VARCHAR(150),
-			role_id INTEGER REFERENCES roles(id) DEFAULT 1,
-			is_active BOOLEAN DEFAULT true,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
+			-- Tabel untuk menyimpan users
+			CREATE TABLE IF NOT EXISTS users (
+				id SERIAL PRIMARY KEY,
+				username VARCHAR(100) NOT NULL UNIQUE,
+				email VARCHAR(100) NOT NULL UNIQUE,
+				password VARCHAR(255) NOT NULL,
+				nama_lengkap VARCHAR(150),
+				role_id INTEGER REFERENCES roles(id) DEFAULT 1,
+				is_active BOOLEAN DEFAULT true,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
 
-		-- Tabel untuk genre buku
-		CREATE TABLE IF NOT EXISTS genre (
-			id SERIAL PRIMARY KEY,
-			nama_genre VARCHAR(100) NOT NULL UNIQUE,
-			deskripsi TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
+			-- Tabel untuk genre buku
+			CREATE TABLE IF NOT EXISTS genre (
+				id SERIAL PRIMARY KEY,
+				nama_genre VARCHAR(100) NOT NULL UNIQUE,
+				deskripsi TEXT,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
 
-		-- Tabel untuk tags/kategori buku
-		CREATE TABLE IF NOT EXISTS tags (
-			id SERIAL PRIMARY KEY,
-			nama_tag VARCHAR(100) NOT NULL UNIQUE,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
+			-- Tabel untuk tags/kategori buku
+			CREATE TABLE IF NOT EXISTS tags (
+				id SERIAL PRIMARY KEY,
+				nama_tag VARCHAR(100) NOT NULL UNIQUE,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
 
-		-- Tabel untuk katalog buku
-		CREATE TABLE IF NOT EXISTS buku (
-			id SERIAL PRIMARY KEY,
-			judul VARCHAR(255) NOT NULL,
-			penulis VARCHAR(150) NOT NULL,
-			penerbit VARCHAR(150),
-			tahun_terbit INTEGER,
-			isbn VARCHAR(50) UNIQUE,
-			jumlah_halaman INTEGER,
-			deskripsi TEXT,
-			stok_tersedia INTEGER DEFAULT 0,
-			stok_total INTEGER DEFAULT 0,
-			sampul_buku VARCHAR(255),
-			genre_id INTEGER REFERENCES genre(id),
-			is_approved BOOLEAN NOT NULL DEFAULT false,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
+			-- Tabel untuk katalog buku (dengan status approval)
+			CREATE TABLE IF NOT EXISTS buku (
+				id SERIAL PRIMARY KEY,
+				judul VARCHAR(255) NOT NULL,
+				penulis VARCHAR(150) NOT NULL,
+				penerbit VARCHAR(150),
+				tahun_terbit INTEGER,
+				isbn VARCHAR(50) UNIQUE,
+				jumlah_halaman INTEGER,
+				deskripsi TEXT,
+				stok_tersedia INTEGER DEFAULT 0,
+				stok_total INTEGER DEFAULT 0,
+				sampul_buku VARCHAR(255),
+				genre_id INTEGER REFERENCES genre(id),
+				status VARCHAR(20) DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+				created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+				approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+				approved_at TIMESTAMP,
+				rejected_at TIMESTAMP,
+				rejection_reason TEXT,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
 
-		-- Tabel relasi buku dan tags (many to many)
-		CREATE TABLE IF NOT EXISTS buku_tags (
-			id SERIAL PRIMARY KEY,
-			buku_id INTEGER NOT NULL,
-			tag_id INTEGER NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(buku_id, tag_id),
-			FOREIGN KEY (buku_id) REFERENCES buku(id) ON DELETE CASCADE,
-			FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-		);
+			-- Tabel relasi buku dan tags (many to many)
+			CREATE TABLE IF NOT EXISTS buku_tags (
+				id SERIAL PRIMARY KEY,
+				buku_id INTEGER NOT NULL,
+				tag_id INTEGER NOT NULL,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				UNIQUE(buku_id, tag_id),
+				FOREIGN KEY (buku_id) REFERENCES buku(id) ON DELETE CASCADE,
+				FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+			);
 
-		-- Tabel untuk request penambahan buku dari staf (menunggu approval admin)
-		CREATE TABLE IF NOT EXISTS buku_pending (
-			id SERIAL PRIMARY KEY,
-			judul VARCHAR(255) NOT NULL,
-			penulis VARCHAR(150) NOT NULL,
-			penerbit VARCHAR(150),
-			tahun_terbit INTEGER,
-			isbn VARCHAR(50),
-			jumlah_halaman INTEGER,
-			deskripsi TEXT,
-			stok_tersedia INTEGER DEFAULT 0,
-			stok_total INTEGER DEFAULT 0,
-			sampul_buku VARCHAR(255),
-			genre_id INTEGER REFERENCES genre(id),
-			status VARCHAR(50) DEFAULT 'pending',
-			diajukan_oleh INTEGER REFERENCES users(id),
-			disetujui_oleh INTEGER REFERENCES users(id),
-			catatan_admin TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);
+			-- Tabel untuk peminjaman buku
+			CREATE TABLE IF NOT EXISTS peminjaman (
+				id SERIAL PRIMARY KEY,
+				user_id INTEGER NOT NULL,
+				buku_id INTEGER NOT NULL,
+				tanggal_pinjam TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				tanggal_kembali_target TIMESTAMP NOT NULL,
+				tanggal_kembali_aktual TIMESTAMP,
+				status VARCHAR(50) DEFAULT 'dipinjam',
+				denda DECIMAL(10, 2) DEFAULT 0,
+				catatan TEXT,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+				FOREIGN KEY (buku_id) REFERENCES buku(id) ON DELETE CASCADE
+			);
 
-		-- Tabel relasi buku pending dan tags
-		CREATE TABLE IF NOT EXISTS buku_pending_tags (
-			id SERIAL PRIMARY KEY,
-			buku_pending_id INTEGER NOT NULL,
-			tag_id INTEGER NOT NULL,
-			UNIQUE(buku_pending_id, tag_id),
-			FOREIGN KEY (buku_pending_id) REFERENCES buku_pending(id) ON DELETE CASCADE,
-			FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-		);
+			-- Legacy tables for backward compatibility
+			CREATE TABLE IF NOT EXISTS books (
+				id SERIAL PRIMARY KEY,
+				title VARCHAR(255) NOT NULL,
+				author VARCHAR(150),
+				genre_id INTEGER,
+				stock INTEGER NOT NULL DEFAULT 0,
+				is_approved BOOLEAN NOT NULL DEFAULT false,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (genre_id) REFERENCES genre(id) ON DELETE SET NULL
+			);
 
-		-- Tabel untuk peminjaman buku
-		CREATE TABLE IF NOT EXISTS peminjaman (
-			id SERIAL PRIMARY KEY,
-			user_id INTEGER NOT NULL,
-			buku_id INTEGER NOT NULL,
-			tanggal_pinjam TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			tanggal_kembali_target TIMESTAMP NOT NULL,
-			tanggal_kembali_aktual TIMESTAMP,
-			status VARCHAR(50) DEFAULT 'dipinjam',
-			denda DECIMAL(10, 2) DEFAULT 0,
-			catatan TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-			FOREIGN KEY (buku_id) REFERENCES buku(id) ON DELETE CASCADE
-		);
+			CREATE TABLE IF NOT EXISTS book_tags (
+				book_id INTEGER NOT NULL,
+				tag_id INTEGER NOT NULL,
+				PRIMARY KEY (book_id, tag_id),
+				FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+				FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+			);
 
-		-- Legacy table for backward compatibility
-		CREATE TABLE IF NOT EXISTS books (
-			id SERIAL PRIMARY KEY,
-			title VARCHAR(255) NOT NULL,
-			author VARCHAR(150),
-			genre_id INTEGER,
-			stock INTEGER NOT NULL DEFAULT 0,
-			is_approved BOOLEAN NOT NULL DEFAULT false,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (genre_id) REFERENCES genre(id) ON DELETE SET NULL
-		);
+			CREATE TABLE IF NOT EXISTS borrows (
+				id SERIAL PRIMARY KEY,
+				book_id INTEGER NOT NULL,
+				member_id VARCHAR(100) NOT NULL,
+				borrowed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				returned_at TIMESTAMP,
+				FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+			);
 
-		CREATE TABLE IF NOT EXISTS book_tags (
-			book_id INTEGER NOT NULL,
-			tag_id INTEGER NOT NULL,
-			PRIMARY KEY (book_id, tag_id),
-			FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
-			FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-		);
+			CREATE TABLE IF NOT EXISTS approvals (
+				id SERIAL PRIMARY KEY,
+				book_id INTEGER NOT NULL,
+				requested_by VARCHAR(100) NOT NULL,
+				status VARCHAR(50) NOT NULL CHECK(status IN ('pending','approved','rejected')) DEFAULT 'pending',
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				approved_at TIMESTAMP,
+				FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+			);
+		`);
 
-		CREATE TABLE IF NOT EXISTS borrows (
-			id SERIAL PRIMARY KEY,
-			book_id INTEGER NOT NULL,
-			member_id VARCHAR(100) NOT NULL,
-			borrowed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			returned_at TIMESTAMP,
-			FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
-		);
-
-		CREATE TABLE IF NOT EXISTS approvals (
-			id SERIAL PRIMARY KEY,
-			book_id INTEGER NOT NULL,
-			requested_by VARCHAR(100) NOT NULL,
-			status VARCHAR(50) NOT NULL CHECK(status IN ('pending','approved','rejected')) DEFAULT 'pending',
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			approved_at TIMESTAMP,
-			FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
-		);
-	`);
-
-	// Note: Default data insertion disabled to avoid conflicts
-	// Run database_schema.sql manually in PostgreSQL instead
-	// await insertDefaultData(db);
+		console.log('✅ Database initialized successfully');
+	} catch (error) {
+		console.error('❌ Error initializing database:', error);
+		throw error;
+	}
 }
 
 async function insertDefaultData(db) {
@@ -226,11 +202,11 @@ async function insertDefaultData(db) {
 		await db.query(`INSERT INTO tags (id, nama_tag) VALUES (8, 'Dewasa') ON CONFLICT (id) DO NOTHING`);
 
 		// Insert sample books
-		await db.query(`INSERT INTO buku (id, judul, penulis, penerbit, tahun_terbit, isbn, jumlah_halaman, deskripsi, stok_tersedia, stok_total, genre_id, is_approved) VALUES (1, 'Laskar Pelangi', 'Andrea Hirata', 'Bentang Pustaka', 2005, '9789793062792', 529, 'Novel tentang perjuangan anak-anak di Belitung', 5, 5, 1, true) ON CONFLICT (id) DO NOTHING`);
-		await db.query(`INSERT INTO buku (id, judul, penulis, penerbit, tahun_terbit, isbn, jumlah_halaman, deskripsi, stok_tersedia, stok_total, genre_id, is_approved) VALUES (2, 'Bumi Manusia', 'Pramoedya Ananta Toer', 'Hasta Mitra', 1980, '9789799731234', 535, 'Novel sejarah Indonesia', 3, 3, 1, true) ON CONFLICT (id) DO NOTHING`);
-		await db.query(`INSERT INTO buku (id, judul, penulis, penerbit, tahun_terbit, isbn, jumlah_halaman, deskripsi, stok_tersedia, stok_total, genre_id, is_approved) VALUES (3, 'Sapiens', 'Yuval Noah Harari', 'Gramedia', 2015, '9786020331447', 512, 'Sejarah singkat manusia', 4, 4, 2, true) ON CONFLICT (id) DO NOTHING`);
+		await db.query(`INSERT INTO buku (id, judul, penulis, penerbit, tahun_terbit, isbn, jumlah_halaman, deskripsi, stok_tersedia, stok_total, genre_id, status) VALUES (1, 'Laskar Pelangi', 'Andrea Hirata', 'Bentang Pustaka', 2005, '9789793062792', 529, 'Novel tentang perjuangan anak-anak di Belitung', 5, 5, 1, 'approved') ON CONFLICT (id) DO NOTHING`);
+		await db.query(`INSERT INTO buku (id, judul, penulis, penerbit, tahun_terbit, isbn, jumlah_halaman, deskripsi, stok_tersedia, stok_total, genre_id, status) VALUES (2, 'Bumi Manusia', 'Pramoedya Ananta Toer', 'Hasta Mitra', 1980, '9789799731234', 535, 'Novel sejarah Indonesia', 3, 3, 1, 'approved') ON CONFLICT (id) DO NOTHING`);
+		await db.query(`INSERT INTO buku (id, judul, penulis, penerbit, tahun_terbit, isbn, jumlah_halaman, deskripsi, stok_tersedia, stok_total, genre_id, status) VALUES (3, 'Sapiens', 'Yuval Noah Harari', 'Gramedia', 2015, '9786020331447', 512, 'Sejarah singkat manusia', 4, 4, 2, 'approved') ON CONFLICT (id) DO NOTHING`);
 	} catch (error) {
-		console.log('Error inserting default data:', error.message);
+		console.log('⚠️  Error inserting default data:', error.message);
 	}
 }
 
@@ -249,5 +225,3 @@ export async function withTransaction(run) {
 		client.release();
 	}
 }
-
-
