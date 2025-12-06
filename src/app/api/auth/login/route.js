@@ -9,7 +9,7 @@ export async function POST(req) {
     const db = getDb();
     const { username, password } = await req.json();
     
-    console.log('🔍 Login attempt:', { username });
+    console.log('🔐 Login attempt:', { username });
     
     if (!username || !password) {
       return NextResponse.json({ 
@@ -44,9 +44,9 @@ export async function POST(req) {
       }, { status: 403 });
     }
 
-    console.log('🔐 Verifying password...');
+    console.log('🔍 Verifying password...');
     const passwordOk = await verifyPassword(password, user.password);
-    console.log('🔐 Password check result:', passwordOk);
+    console.log('🔍 Password check result:', passwordOk);
     
     if (!passwordOk) {
       console.log('❌ Password salah untuk user:', user.username);
@@ -56,16 +56,18 @@ export async function POST(req) {
       }, { status: 401 });
     }
 
-    // Generate JWT
+    // Generate JWT dengan payload yang benar
     const payload = { 
+      id: user.id, // PENTING: untuk getUserFromRequest
       sub: String(user.id),
       userId: user.id,
+      username: user.username,
+      email: user.email,
       role: user.nama_role || 'visitor',
-      role_id: user.role_id, // ✅ PENTING: untuk middleware
-      username: user.username 
+      role_id: user.role_id, // PENTING: untuk middleware & role check
     };
     
-    const token = signJwt(payload, { expiresIn: '2h' });
+    const token = signJwt(payload, { expiresIn: '7d' }); // 7 hari
     
     console.log('✅ Login berhasil:', { 
       username: user.username, 
@@ -73,12 +75,10 @@ export async function POST(req) {
       role_id: payload.role_id 
     });
 
-    // ✅ CRITICAL FIX: Simpan token ke cookie
+    // Response JSON (tanpa token di body)
     const response = NextResponse.json({
       success: true,
-      accessToken: token,
-      token: token,
-      expiresIn: 7200,
+      message: 'Login berhasil',
       user: { 
         id: user.id, 
         username: user.username, 
@@ -89,14 +89,16 @@ export async function POST(req) {
       }
     });
 
-    // Set cookie dengan token
+    // ✅ CRITICAL: Set httpOnly cookie
     response.cookies.set('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7200 // 2 hours
+      httpOnly: true, // Tidak bisa diakses JavaScript
+      secure: process.env.NODE_ENV === 'production', // HTTPS only di production
+      sameSite: 'lax', // CSRF protection
+      maxAge: 60 * 60 * 24 * 7, // 7 hari (dalam detik)
+      path: '/', // Available di semua routes
     });
 
+    console.log('🍪 Token stored in httpOnly cookie');
     return response;
     
   } catch (error) {

@@ -99,7 +99,7 @@ export async function GET(req) {
 
 // POST: Tambah buku baru
 export async function POST(req) {
-  const { ok } = requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
+  const { ok } = await requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
   if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   
   await initDb();
@@ -219,7 +219,7 @@ export async function POST(req) {
 
 // PUT: Edit buku (STAF: kembali pending, ADMIN: tetap approved)
 export async function PUT(req) {
-  const { ok } = requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
+  const { ok } = await requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
   if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   
   await initDb();
@@ -336,7 +336,7 @@ export async function PUT(req) {
 
 // DELETE: Hapus buku
 export async function DELETE(req) {
-  const { ok } = requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
+  const { ok } = await requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
   if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   
   await initDb();

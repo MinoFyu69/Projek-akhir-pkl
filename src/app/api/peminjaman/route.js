@@ -1,20 +1,56 @@
 // src/app/api/peminjaman/route.js
-// API untuk member request peminjaman & staf/admin approval
 import { NextResponse } from 'next/server';
 import { getDb, initDb, withTransaction } from '@/lib/db';
-import { getRoleFromRequest, requireRole, ROLES } from '@/lib/roles';
+import { jwtVerify } from 'jose';
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'your-super-secret-key-change-in-production'
+);
+
+const ROLES = {
+  MEMBER: 2,
+  STAF: 3,
+  ADMIN: 4
+};
+
+// Helper: Get user from token
+async function getUserFromRequest(req) {
+  try {
+    const token = req.cookies.get('token')?.value;
+    if (!token) return null;
+    
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    return {
+      userId: payload.id,
+      username: payload.username,
+      role_id: payload.role_id
+    };
+  } catch (error) {
+    console.error('❌ Token verification failed:', error);
+    return null;
+  }
+}
 
 // GET - Ambil semua peminjaman (filtered by role)
 export async function GET(req) {
-  const { ok, role } = requireRole(req, [ROLES.MEMBER, ROLES.STAF, ROLES.ADMIN]);
-  if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-
-  await initDb();
-  const db = getDb();
-
   try {
+    const user = await getUserFromRequest(req);
+    
+    if (!user) {
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Check if user has required role
+    const allowedRoles = [ROLES.MEMBER, ROLES.STAF, ROLES.ADMIN];
+    if (!allowedRoles.includes(user.role_id)) {
+      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+    }
+
+    await initDb();
+    const db = getDb();
+
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get('status'); // pending, approved, rejected, dipinjam, dikembalikan
+    const status = searchParams.get('status');
     const userId = searchParams.get('user_id');
 
     let query = `
@@ -41,11 +77,10 @@ export async function GET(req) {
     let paramCount = 0;
 
     // Member hanya bisa lihat peminjaman sendiri
-    if (role === ROLES.MEMBER) {
-      const userIdFromToken = req.user?.id; // Asumsi user id ada di token
+    if (user.role_id === ROLES.MEMBER) {
       paramCount++;
       query += ` AND p.user_id = $${paramCount}`;
-      params.push(userIdFromToken);
+      params.push(user.userId);
     } else if (userId) {
       // Staf/Admin bisa filter by user
       paramCount++;
@@ -66,7 +101,7 @@ export async function GET(req) {
     // Hitung denda otomatis untuk yang terlambat
     const dataWithDenda = result.rows.map(row => {
       if (row.status === 'dipinjam' && row.hari_terlambat > 0) {
-        const dendaPerHari = 2000; // Default Rp 2000/hari
+        const dendaPerHari = 2000;
         const dendaOtomatis = row.hari_terlambat * dendaPerHari;
         return {
           ...row,
@@ -81,7 +116,9 @@ export async function GET(req) {
       };
     });
 
+    console.log('✅ Peminjaman fetched:', dataWithDenda.length);
     return NextResponse.json(dataWithDenda);
+    
   } catch (error) {
     console.error('❌ Error fetching peminjaman:', error);
     return NextResponse.json({ 
@@ -93,25 +130,28 @@ export async function GET(req) {
 
 // POST - Member request peminjaman buku
 export async function POST(req) {
-  const { ok, role } = requireRole(req, [ROLES.MEMBER]);
-  if (!ok) return NextResponse.json({ message: 'Forbidden - Member only' }, { status: 403 });
-
-  await initDb();
-  const db = getDb();
-
   try {
-    const body = await req.json();
-    const { user_id, buku_id, durasi_hari = 7 } = body;
-
-    if (!user_id || !buku_id) {
-      return NextResponse.json({ 
-        message: 'user_id dan buku_id diperlukan' 
-      }, { status: 400 });
+    const user = await getUserFromRequest(req);
+    
+    if (!user || user.role_id !== ROLES.MEMBER) {
+      return NextResponse.json({ message: 'Forbidden - Member only' }, { status: 403 });
     }
+
+    await initDb();
+    const db = getDb();
+
+    const body = await req.json();
+    const { buku_id, durasi_hari = 7 } = body;
+
+    if (!buku_id) {
+      return NextResponse.json({ message: 'buku_id diperlukan' }, { status: 400 });
+    }
+
+    const user_id = user.userId;
 
     // Cek stok buku
     const bukuResult = await db.query(
-      `SELECT stok_tersedia, judul FROM buku WHERE id = $1`,
+      `SELECT stok_tersedia, judul, status FROM buku WHERE id = $1`,
       [buku_id]
     );
 
@@ -119,11 +159,17 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Buku tidak ditemukan' }, { status: 404 });
     }
 
-    if (bukuResult.rows[0].stok_tersedia < 1) {
+    const buku = bukuResult.rows[0];
+
+    if (buku.status !== 'approved') {
+      return NextResponse.json({ message: 'Buku belum disetujui' }, { status: 400 });
+    }
+
+    if (buku.stok_tersedia < 1) {
       return NextResponse.json({ message: 'Stok buku habis' }, { status: 400 });
     }
 
-    // Cek apakah user masih punya peminjaman aktif untuk buku yang sama
+    // Cek peminjaman aktif
     const activeResult = await db.query(
       `SELECT id FROM peminjaman 
        WHERE user_id = $1 AND buku_id = $2 
@@ -137,11 +183,11 @@ export async function POST(req) {
       }, { status: 400 });
     }
 
-    // Calculate tanggal kembali target
+    // Calculate target date
     const tanggalKembaliTarget = new Date();
     tanggalKembaliTarget.setDate(tanggalKembaliTarget.getDate() + durasi_hari);
 
-    // Insert peminjaman dengan status pending
+    // Insert peminjaman
     const insertResult = await db.query(`
       INSERT INTO peminjaman (
         user_id, buku_id, 
@@ -174,15 +220,18 @@ export async function POST(req) {
   }
 }
 
-// PUT - Staf/Admin approve/reject peminjaman atau update denda
+// PUT - Staf/Admin approve/reject peminjaman
 export async function PUT(req) {
-  const { ok } = requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
-  if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-
-  await initDb();
-  const db = getDb();
-
   try {
+    const user = await getUserFromRequest(req);
+    
+    if (!user || ![ROLES.STAF, ROLES.ADMIN].includes(user.role_id)) {
+      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+    }
+
+    await initDb();
+    const db = getDb();
+
     const body = await req.json();
     const { id, action, denda, catatan } = body;
 
@@ -207,7 +256,6 @@ export async function PUT(req) {
 
     await withTransaction(async (client) => {
       if (action === 'approve') {
-        // Approve peminjaman - kurangi stok
         if (current.status !== 'pending') {
           throw new Error('Hanya peminjaman pending yang bisa diapprove');
         }
@@ -225,16 +273,9 @@ export async function PUT(req) {
           WHERE id = $2
         `, [catatan || 'Peminjaman disetujui', id]);
 
-        // Kurangi stok
-        await client.query(
-          `UPDATE buku SET stok_tersedia = stok_tersedia - 1 WHERE id = $1`,
-          [current.buku_id]
-        );
-
         console.log('✅ Peminjaman approved, ID:', id);
       } 
       else if (action === 'reject') {
-        // Reject peminjaman
         if (current.status !== 'pending') {
           throw new Error('Hanya peminjaman pending yang bisa direject');
         }
@@ -250,7 +291,6 @@ export async function PUT(req) {
         console.log('✅ Peminjaman rejected, ID:', id);
       }
       else if (action === 'return') {
-        // Kembalikan buku
         if (current.status !== 'dipinjam') {
           throw new Error('Hanya peminjaman aktif yang bisa dikembalikan');
         }
@@ -265,28 +305,10 @@ export async function PUT(req) {
           WHERE id = $3
         `, [denda || 0, catatan || 'Buku dikembalikan', id]);
 
-        // Kembalikan stok
-        await client.query(
-          `UPDATE buku SET stok_tersedia = stok_tersedia + 1 WHERE id = $1`,
-          [current.buku_id]
-        );
-
         console.log('✅ Buku returned, ID:', id);
       }
-      else if (action === 'update_denda') {
-        // Update denda untuk peminjaman yang terlambat
-        await client.query(`
-          UPDATE peminjaman 
-          SET denda = $1, 
-              catatan = $2,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $3
-        `, [denda || 0, catatan || 'Denda diupdate', id]);
-
-        console.log('✅ Denda updated, ID:', id);
-      }
       else {
-        throw new Error('Action tidak valid: approve, reject, return, atau update_denda');
+        throw new Error('Action tidak valid');
       }
     });
 
@@ -315,15 +337,18 @@ export async function PUT(req) {
   }
 }
 
-// DELETE - Admin only (hard delete)
+// DELETE - Admin only
 export async function DELETE(req) {
-  const { ok } = requireRole(req, [ROLES.ADMIN]);
-  if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
-
-  await initDb();
-  const db = getDb();
-
   try {
+    const user = await getUserFromRequest(req);
+    
+    if (!user || user.role_id !== ROLES.ADMIN) {
+      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+    }
+
+    await initDb();
+    const db = getDb();
+
     const { searchParams } = new URL(req.url);
     const id = Number(searchParams.get('id'));
 

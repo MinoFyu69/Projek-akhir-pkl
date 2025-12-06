@@ -1,7 +1,7 @@
 // src/app/login/page.jsx
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from "react";  
 import { useRouter } from 'next/navigation';
 import { BookOpen, User, Lock, Eye, EyeOff, Sparkles, ArrowRight, LogIn } from 'lucide-react';
 
@@ -21,36 +21,51 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      console.log('🔐 Attempting login...');
+      
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // ✅ CRITICAL: Kirim dan terima cookies
         body: JSON.stringify(formData)
       });
 
       const data = await response.json();
+      console.log('📥 Login response:', data);
 
       if (response.ok) {
-        console.log('✅ Login success, role:', data.user.role_id);
+        console.log('✅ Login success!');
+        console.log('👤 User role_id:', data.user.role_id);
+        console.log('🍪 Token stored in httpOnly cookie');
+        
+        // ❌ JANGAN simpan ke localStorage lagi!
+        // Token sudah otomatis tersimpan di httpOnly cookie
         
         // Redirect based on role
+        let redirectPath;
         switch (data.user.role_id) {
           case 4: // Admin
-            router.push('/admin/dashboard');
+            redirectPath = '/admin/dashboard';
             break;
           case 3: // Staf
-            router.push('/staf/dashboard');
+            redirectPath = '/staf/dashboard';
             break;
           case 2: // Member
-            router.push('/member/dashboard');
+            redirectPath = '/member/buku';
             break;
           default:
-            router.push('/visitor');
+            redirectPath = '/visitor';
         }
+        
+        console.log('🚀 Redirecting to:', redirectPath);
+        router.push(redirectPath);
+        
       } else {
+        console.error('❌ Login failed:', data.message);
         setError(data.message || 'Login gagal');
       }
     } catch (err) {
-      console.error('Login error:', err);
+      console.error('💥 Login error:', err);
       setError('Terjadi kesalahan. Silakan coba lagi.');
     } finally {
       setLoading(false);
@@ -59,11 +74,13 @@ export default function LoginPage() {
 
   const handleVisitorClick = (e) => {
     e.preventDefault();
+    console.log('🌐 Redirecting to visitor page...');
     router.push('/visitor');
   };
 
   const handleRegisterClick = (e) => {
     e.preventDefault();
+    console.log('📝 Redirecting to register page...');
     router.push('/register');
   };
 
@@ -156,6 +173,7 @@ export default function LoginPage() {
                       className="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-gray-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
                       placeholder="Username atau email@example.com"
                       required
+                      disabled={loading}
                     />
                   </div>
                 </div>
@@ -177,11 +195,13 @@ export default function LoginPage() {
                       className="w-full pl-12 pr-14 py-4 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-gray-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 outline-none transition-all"
                       placeholder="Masukkan password"
                       required
+                      disabled={loading}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 transition-colors"
+                      disabled={loading}
                     >
                       {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                     </button>
@@ -193,17 +213,22 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full relative group overflow-hidden rounded-xl p-0.5 transition-all duration-300 animate-slide-in"
+                className="w-full relative group overflow-hidden rounded-xl p-0.5 transition-all duration-300 animate-slide-in disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ animationDelay: '300ms' }}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 animate-gradient"></div>
                 <div className="relative bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 rounded-xl flex items-center justify-center gap-3 group-hover:from-indigo-500 group-hover:to-purple-500 transition-all">
-                  <LogIn size={20} className="text-white group-hover:scale-110 transition-transform" />
-                  <span className="text-white font-bold text-lg">
-                    {loading ? 'Memproses...' : 'Masuk Sekarang'}
-                  </span>
-                  {!loading && (
-                    <ArrowRight size={20} className="text-white group-hover:translate-x-1 transition-transform" />
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span className="text-white font-bold text-lg">Memproses...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LogIn size={20} className="text-white group-hover:scale-110 transition-transform" />
+                      <span className="text-white font-bold text-lg">Masuk Sekarang</span>
+                      <ArrowRight size={20} className="text-white group-hover:translate-x-1 transition-transform" />
+                    </>
                   )}
                 </div>
               </button>
@@ -222,12 +247,13 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={handleVisitorClick}
-                className="w-full relative group overflow-hidden border-2 border-slate-600 hover:border-indigo-500 rounded-xl py-4 transition-all transform hover:scale-105 animate-slide-in"
+                disabled={loading}
+                className="w-full relative group overflow-hidden border-2 border-slate-600 hover:border-indigo-500 rounded-xl py-4 transition-all transform hover:scale-105 animate-slide-in disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ animationDelay: '500ms' }}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div className="relative flex items-center justify-center gap-2 text-gray-300 group-hover:text-white transition-colors">
-                  <span className="text-2xl">🌍</span>
+                  <span className="text-2xl">🌐</span>
                   <span className="font-semibold">Lihat sebagai Visitor</span>
                 </div>
               </button>
@@ -239,7 +265,8 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={handleRegisterClick}
-                    className="text-transparent bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text font-bold hover:from-indigo-300 hover:to-purple-300 transition-all"
+                    disabled={loading}
+                    className="text-transparent bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text font-bold hover:from-indigo-300 hover:to-purple-300 transition-all disabled:opacity-50"
                   >
                     Daftar Sekarang →
                   </button>

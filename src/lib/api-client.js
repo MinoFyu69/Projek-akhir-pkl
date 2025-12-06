@@ -1,42 +1,25 @@
 // src/lib/api-client.js
-import { getToken } from './client-auth';
 
 export async function apiFetch(url, options = {}) {
   console.log('🌐 apiFetch called for:', url);
-  
-  // Get token from localStorage
-  const token = getToken();
-  
-  if (!token) {
-    console.error('❌ NO TOKEN FOUND! Cannot make authenticated request.');
-    console.log('Please login first or check localStorage.');
-  } else {
-    console.log('✅ Token found, adding to Authorization header');
-    console.log('Token preview:', token.substring(0, 30) + '...');
-  }
   
   const headers = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
 
-  // Add Authorization header if token exists
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-    console.log('✅ Authorization header added: Bearer', token.substring(0, 20) + '...');
-  }
-
-  console.log('📤 Request headers:', Object.keys(headers));
-
+  // IMPORTANT: Send cookies automatically
   const config = {
     ...options,
     headers,
+    credentials: 'include', // THIS IS CRUCIAL!
   };
 
+  console.log('📤 Request:', options.method || 'GET', url);
+
   try {
-    console.log('📡 Making request...');
     const response = await fetch(url, config);
-    console.log('📥 Response status:', response.status, response.statusText);
+    console.log('📥 Response status:', response.status);
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -45,15 +28,30 @@ export async function apiFetch(url, options = {}) {
       try {
         error = JSON.parse(errorText);
       } catch {
-        error = { message: errorText || `HTTP ${response.status}: ${response.statusText}` };
+        error = { message: errorText || `HTTP ${response.status}` };
       }
       
       console.error('❌ Request failed:', error);
+      
+      // Handle auth errors
+      if (response.status === 401) {
+        console.error('🔒 Unauthorized - redirecting to login');
+        if (typeof window !== 'undefined') {
+          alert('Sesi Anda telah berakhir. Silakan login kembali.');
+          window.location.href = '/login';
+        }
+      } else if (response.status === 403) {
+        console.error('🚫 Forbidden - insufficient permissions');
+        if (error.yourRole !== undefined) {
+          console.error(`Your role: ${error.yourRole}, Required: ${error.requiredRoles?.join(' or ')}`);
+        }
+      }
+      
       throw new Error(error.message || `HTTP ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('✅ Request successful, data received');
+    console.log('✅ Request successful');
     return data;
     
   } catch (error) {

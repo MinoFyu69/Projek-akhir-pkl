@@ -18,14 +18,17 @@ const ROLES = {
 const PUBLIC_ROUTES = [
   '/login',
   '/register',
-  '/visitor',           // ✅ VISITOR IS PUBLIC
-  '/api/visitor',       // ✅ VISITOR API IS PUBLIC
+  '/visitor',
+  '/api/visitor',
   '/api/auth/login',
   '/api/auth/register',
-  '/_next',
+  '/',
+];
+
+// EXACT MATCH - must match exactly
+const PUBLIC_STATIC = [
   '/favicon.ico',
-  '/public',
-  '/',                  // ✅ ROOT IS PUBLIC (redirects to visitor)
+  '/robots.txt',
 ];
 
 // Route permissions (ONLY for authenticated users)
@@ -36,7 +39,7 @@ const ROUTE_PERMISSIONS = {
   '/api/admin': [ROLES.ADMIN],
   '/api/staf': [ROLES.STAF, ROLES.ADMIN],
   '/api/member': [ROLES.MEMBER, ROLES.STAF, ROLES.ADMIN],
-  '/api/peminjaman': [ROLES.MEMBER, ROLES.STAF, ROLES.ADMIN]  // ✅ REQUIRES AUTH
+  '/api/peminjaman': [ROLES.MEMBER, ROLES.STAF, ROLES.ADMIN]
 };
 
 export async function middleware(request) {
@@ -45,11 +48,37 @@ export async function middleware(request) {
   console.log('🔍 Middleware checking:', pathname);
 
   // ==========================================
-  // STEP 1: Check if route is PUBLIC
+  // STEP 1: Skip Next.js internal routes
   // ==========================================
-  const isPublicRoute = PUBLIC_ROUTES.some(route => 
-    pathname === route || pathname.startsWith(route)
-  );
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/public') ||
+    pathname.includes('.')  // static files: .ico, .png, .js, .css
+  ) {
+    console.log('⏭️  Skipping internal/static route:', pathname);
+    return NextResponse.next();
+  }
+
+  // ==========================================
+  // STEP 2: Check EXACT match for static files
+  // ==========================================
+  if (PUBLIC_STATIC.includes(pathname)) {
+    console.log('✅ Public static file:', pathname);
+    return NextResponse.next();
+  }
+
+  // ==========================================
+  // STEP 3: Check if route starts with PUBLIC path
+  // ==========================================
+  const isPublicRoute = PUBLIC_ROUTES.some(route => {
+    // Exact match
+    if (pathname === route) return true;
+    
+    // Starts with (but not for root /)
+    if (route !== '/' && pathname.startsWith(route)) return true;
+    
+    return false;
+  });
 
   if (isPublicRoute) {
     console.log('✅ Public route, allowing access:', pathname);
@@ -57,12 +86,12 @@ export async function middleware(request) {
   }
 
   // ==========================================
-  // STEP 2: Not public - need authentication
+  // STEP 4: Not public - need authentication
   // ==========================================
   const token = request.cookies.get('token')?.value;
 
   if (!token) {
-    console.log('⚠️  No token, redirecting to login:', pathname);
+    console.log('❌ No token found for:', pathname);
     
     // For API routes, return 401 instead of redirect
     if (pathname.startsWith('/api/')) {
@@ -77,21 +106,20 @@ export async function middleware(request) {
   }
 
   // ==========================================
-  // STEP 3: Verify token
+  // STEP 5: Verify token
   // ==========================================
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     const userRole = payload.role_id;
 
     console.log('✅ Token verified:', {
-      pathname,
       username: payload.username,
       role_id: userRole,
       role_name: userRole === 4 ? 'Admin' : userRole === 3 ? 'Staf' : userRole === 2 ? 'Member' : 'Unknown'
     });
 
     // ==========================================
-    // STEP 4: Check route permissions
+    // STEP 6: Check route permissions
     // ==========================================
     for (const [route, allowedRoles] of Object.entries(ROUTE_PERMISSIONS)) {
       if (pathname.startsWith(route)) {
@@ -156,13 +184,6 @@ export async function middleware(request) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\..*|public).*)',
   ],
 };

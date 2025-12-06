@@ -9,7 +9,7 @@ import { requireRole, ROLES } from '@/lib/roles';
 export async function GET(req) {
 	console.log('🏷️ GET /api/staf/tags called');
 	
-	const authCheck = requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
+	const authCheck = await requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
 	
 	if (!authCheck.ok) {
 		console.error('❌ UNAUTHORIZED! Your role:', authCheck.role);
@@ -47,7 +47,7 @@ export async function GET(req) {
 export async function POST(req) {
 	console.log('➕ POST /api/staf/tags called');
 	
-	const authCheck = requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
+	const authCheck = await requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
 	
 	if (!authCheck.ok) {
 		console.error('❌ UNAUTHORIZED! Your role:', authCheck.role);
@@ -116,7 +116,7 @@ export async function POST(req) {
 export async function PUT(req) {
 	console.log('✏️ PUT /api/staf/tags called');
 	
-	const authCheck = requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
+	const authCheck = await requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
 	
 	if (!authCheck.ok) {
 		console.error('❌ UNAUTHORIZED! Your role:', authCheck.role);
@@ -192,7 +192,7 @@ export async function PUT(req) {
 export async function DELETE(req) {
 	console.log('🗑️ DELETE /api/staf/tags called');
 	
-	const authCheck = requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
+	const authCheck = await requireRole(req, [ROLES.STAF, ROLES.ADMIN]);
 	
 	if (!authCheck.ok) {
 		console.error('❌ UNAUTHORIZED! Your role:', authCheck.role);

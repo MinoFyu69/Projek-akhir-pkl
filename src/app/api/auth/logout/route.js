@@ -1,20 +1,31 @@
 // src/app/api/auth/logout/route.js
 import { NextResponse } from 'next/server';
 
-export async function POST(req) {
+export async function POST() {
   try {
-    // For JWT-based auth, logout is handled client-side
-    // Just return success response
-    return NextResponse.json({
-      success: true,
-      message: 'Logout berhasil'
+    // Create response
+    const response = NextResponse.json(
+      { success: true, message: 'Logout berhasil' },
+      { status: 200 }
+    );
+
+    // Delete the token cookie
+    response.cookies.set('token', '', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 0, // Expire immediately
+      path: '/',
     });
+
+    console.log('✅ User logged out, token cleared');
+    return response;
+
   } catch (error) {
-    console.error('Logout error:', error);
-    return NextResponse.json({
-      success: false,
-      message: 'Logout gagal',
-      error: error.message
-    }, { status: 500 });
+    console.error('❌ Logout error:', error);
+    return NextResponse.json(
+      { success: false, message: 'Logout gagal' },
+      { status: 500 }
+    );
   }
 }

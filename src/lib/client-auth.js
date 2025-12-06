@@ -1,67 +1,80 @@
 // src/lib/client-auth.js
-const TOKEN_KEY = 'auth_token';
-const USER_KEY = 'auth_user';
 
-export function setToken(token) {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(TOKEN_KEY, token);
-    console.log('✅ Token saved to localStorage');
-    console.log('Token preview:', token.substring(0, 50) + '...');
-  }
-}
-
+/**
+ * Get token from cookies (NOT localStorage)
+ */
 export function getToken() {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (token) {
-      console.log('🎫 Token retrieved from localStorage');
-    } else {
-      console.warn('⚠️ No token found in localStorage');
-    }
-    return token;
+  if (typeof document === 'undefined') return null;
+  
+  const cookies = document.cookie.split(';');
+  const tokenCookie = cookies.find(c => c.trim().startsWith('token='));
+  
+  if (!tokenCookie) {
+    console.warn('⚠️ No token found in cookies');
+    return null;
   }
-  return null;
+  
+  const token = tokenCookie.split('=')[1];
+  console.log('✅ Token found in cookies');
+  return token;
 }
 
-export function setUser(user) {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
-    console.log('✅ User saved to localStorage:', user);
-  }
-}
-
+/**
+ * Get user from token (decode JWT from cookies)
+ */
 export function getUser() {
-  if (typeof window !== 'undefined') {
-    const userData = localStorage.getItem(USER_KEY);
-    if (userData) {
-      try {
-        return JSON.parse(userData);
-      } catch {
-        return null;
-      }
-    }
+  const token = getToken();
+  if (!token) return null;
+
+  try {
+    // Decode JWT payload (base64)
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(base64));
+    
+    console.log('✅ User decoded from token:', payload);
+    return {
+      id: payload.id,
+      userId: payload.id,
+      username: payload.username,
+      role_id: payload.role_id,
+      email: payload.email
+    };
+  } catch (error) {
+    console.error('❌ Failed to decode token:', error);
+    return null;
   }
-  return null;
 }
 
-export function clearAuth() {
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    console.log('🗑️ Auth cleared from localStorage');
-  }
-}
-
+/**
+ * Check if authenticated (has valid token in cookies)
+ */
 export function isAuthenticated() {
   return !!getToken();
 }
 
-export function getAuthHeaders() {
-  const token = getToken();
-  if (token) {
-    return {
-      'Authorization': `Bearer ${token}`,
-    };
+/**
+ * Clear auth - call logout API to clear cookie
+ */
+export async function clearAuth() {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include'
+    });
+    console.log('✅ Auth cleared (cookie deleted)');
+  } catch (error) {
+    console.error('❌ Failed to clear auth:', error);
   }
-  return {};
+}
+
+/**
+ * DEPRECATED - Don't use these anymore
+ */
+export function setToken(token) {
+  console.warn('⚠️ setToken() is deprecated. Tokens are stored in httpOnly cookies.');
+}
+
+export function setUser(user) {
+  console.warn('⚠️ setUser() is deprecated. User data is decoded from cookie token.');
 }

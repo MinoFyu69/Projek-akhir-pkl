@@ -39,6 +39,25 @@ export default function ManajemenBukuPage() {
     fetchGenres();
   }, []);
 
+  async function fetchGenres() {
+  try {
+    console.log('📚 Fetching genres...');
+    setGenresLoading(true);
+    setGenresError(null);
+    
+    const data = await apiFetch('/api/staf/genre');
+    console.log('✅ Genres fetched:', data);
+    setGenres(Array.isArray(data) ? data : []);
+    
+  } catch (err) {
+    console.error('❌ Error fetching genres:', err);
+    setGenresError(err.message || 'Failed to fetch genres');
+    setGenres([]);
+  } finally {
+    setGenresLoading(false);
+  }
+}
+
   async function fetchBooks() {
   try {
     setLoading(true);
