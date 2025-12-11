@@ -22,6 +22,7 @@ const PUBLIC_ROUTES = [
   '/api/visitor',
   '/api/auth/login',
   '/api/auth/register',
+  '/api/auth/me',  // ✅ ADD THIS - needed to get user info
   '/',
 ];
 
@@ -148,7 +149,7 @@ export async function middleware(request) {
               redirectUrl = new URL('/staf/dashboard', request.url);
               break;
             case ROLES.MEMBER:
-              redirectUrl = new URL('/member/dashboard', request.url);
+              redirectUrl = new URL('/member', request.url);
               break;
             default:
               redirectUrl = new URL('/login', request.url);

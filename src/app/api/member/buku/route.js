@@ -1,3 +1,5 @@
+// src/app/api/member/buku/route.js
+
 import { NextResponse } from 'next/server';
 import { getDb, initDb } from '@/lib/db';
 import { requireRole, ROLES } from '@/lib/roles';
@@ -16,7 +18,7 @@ function mapBuku(row) {
 		stok_total: row.stok_total,
 		sampul_buku: row.sampul_buku,
 		genre_id: row.genre_id,
-		is_approved: !!row.is_approved,
+		status: row.status, // ✅ GUNAKAN 'status' bukan 'is_approved'
 		created_at: row.created_at,
 		updated_at: row.updated_at,
 	};
@@ -24,28 +26,18 @@ function mapBuku(row) {
 
 export async function GET(req) {
 	try {
-		const { ok } = requireRole(req, [ROLES.MEMBER, ROLES.ADMIN]);
+		const { ok } = await requireRole(req, [ROLES.MEMBER, ROLES.ADMIN]); // ✅ ADD AWAIT
 		if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
 		
 		await initDb();
 		const db = getDb();
 		
-		// Check if is_approved column exists
-		const columns = await db.query(`
-			SELECT column_name 
-			FROM information_schema.columns 
-			WHERE table_name = 'buku' AND column_name = 'is_approved'
+		// ✅ GANTI: gunakan status = 'approved' bukan is_approved
+		const result = await db.query(`
+			SELECT * FROM buku 
+			WHERE status = 'approved' 
+			ORDER BY created_at DESC
 		`);
-		
-		const hasIsApproved = columns.rows.length > 0;
-		let result;
-		
-		if (hasIsApproved) {
-			result = await db.query(`SELECT * FROM buku WHERE is_approved = true`);
-		} else {
-			// Fallback: return all books if is_approved column doesn't exist
-			result = await db.query(`SELECT * FROM buku`);
-		}
 		
 		return NextResponse.json(result.rows.map(mapBuku));
 	} catch (error) {
@@ -58,8 +50,6 @@ export async function GET(req) {
 	}
 }
 
-// Member role can only view books, not create them directly
-// They can borrow books via /api/member/peminjaman
 export async function POST() {
 	return NextResponse.json({ 
 		message: 'Method Not Allowed. Member role can only view books. Use /api/member/peminjaman to borrow books.' 

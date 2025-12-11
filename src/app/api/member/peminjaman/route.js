@@ -1,3 +1,5 @@
+// src/app/api/member/peminjaman/route.js
+
 import { NextResponse } from 'next/server';
 import { getDb, initDb, withTransaction } from '@/lib/db';
 import { requireRole, ROLES } from '@/lib/roles';
@@ -19,7 +21,7 @@ function mapPeminjaman(row) {
 }
 
 export async function GET(req) {
-	const { ok } = requireRole(req, [ROLES.MEMBER, ROLES.ADMIN]);
+	const { ok } = await requireRole(req, [ROLES.MEMBER, ROLES.ADMIN]); // ✅ ADD AWAIT
 	if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
 
 	await initDb();
@@ -42,7 +44,7 @@ export async function GET(req) {
 }
 
 export async function POST(req) {
-	const { ok } = requireRole(req, [ROLES.MEMBER, ROLES.ADMIN]);
+	const { ok } = await requireRole(req, [ROLES.MEMBER, ROLES.ADMIN]); // ✅ ADD AWAIT
 	if (!ok) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
 
 	await initDb();
@@ -64,28 +66,43 @@ export async function POST(req) {
 	let peminjamanId;
 	try {
 		await withTransaction(async (client) => {
-			// Check if book exists and is approved
-			const bukuResult = await client.query(`SELECT * FROM buku WHERE id = $1 AND is_approved = true`, [buku_id]);
-			if (bukuResult.rows.length === 0) throw new Error('Buku tidak ditemukan atau belum disetujui');
+			// ✅ GANTI: gunakan status = 'approved'
+			const bukuResult = await client.query(`
+				SELECT * FROM buku 
+				WHERE id = $1 AND status = 'approved'
+			`, [buku_id]);
+			
+			if (bukuResult.rows.length === 0) {
+				throw new Error('Buku tidak ditemukan atau belum disetujui');
+			}
+			
 			const buku = bukuResult.rows[0];
-			if (buku.stok_tersedia <= 0) throw new Error('Stok buku habis');
+			if (buku.stok_tersedia <= 0) {
+				throw new Error('Stok buku habis');
+			}
 
-			// Check if user already borrowed this book and hasn't returned it
+			// Check existing borrow
 			const existingBorrowResult = await client.query(`
 				SELECT * FROM peminjaman 
 				WHERE user_id = $1 AND buku_id = $2 AND status = 'dipinjam'
 			`, [user_id, buku_id]);
-			if (existingBorrowResult.rows.length > 0) throw new Error('Anda sudah meminjam buku ini');
+			
+			if (existingBorrowResult.rows.length > 0) {
+				throw new Error('Anda sudah meminjam buku ini');
+			}
 
 			// Insert peminjaman
 			const insertResult = await client.query(`
 				INSERT INTO peminjaman (user_id, buku_id, tanggal_kembali_target, catatan, status) 
 				VALUES ($1, $2, $3, $4, 'pending') RETURNING id
 			`, [user_id, buku_id, tanggal_kembali_target, catatan || null]);
+			
 			peminjamanId = insertResult.rows[0].id;
 
-			// Update stok buku
-			await client.query(`UPDATE buku SET stok_tersedia = stok_tersedia - 1 WHERE id = $1`, [buku_id]);
+			// Update stok
+			await client.query(`
+				UPDATE buku SET stok_tersedia = stok_tersedia - 1 WHERE id = $1
+			`, [buku_id]);
 		});
 	} catch (e) {
 		return NextResponse.json({ message: e.message || 'Peminjaman gagal' }, { status: 400 });
@@ -96,7 +113,6 @@ export async function POST(req) {
 }
 
 export async function PUT(req) {
-	// Member tidak bisa mengubah status peminjaman, hanya Admin yang bisa
 	return NextResponse.json({
 		message: 'Method Not Allowed. Member role can only borrow books (POST). Only Admin can update peminjaman status.'
 	}, { status: 405 });

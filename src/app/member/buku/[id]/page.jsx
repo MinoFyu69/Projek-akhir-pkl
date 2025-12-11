@@ -1,8 +1,10 @@
+// src\app\member\buku\[id]\page.jsx
+
 "use client";
 
 import { useEffect, useState, use } from "react";
 import { apiFetch } from "@/lib/api-client";
-import { getUser, getRole } from "@/lib/client-auth";
+import { getUser, getRole } from "@/lib/client-auth"; // ❌ getRole tidak ada!
 import { ArrowLeft, Calendar, BookOpen, User, Tag, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
 
 function formatDateInput(date) {

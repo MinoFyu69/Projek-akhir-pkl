@@ -51,7 +51,7 @@ export default function LoginPage() {
             redirectPath = '/staf/dashboard';
             break;
           case 2: // Member
-            redirectPath = '/member/buku';
+            redirectPath = '/member';
             break;
           default:
             redirectPath = '/visitor';

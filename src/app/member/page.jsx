@@ -1,8 +1,10 @@
+// src/app/member/page.jsx
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api-client";
-import { getUser, getRole, clearAuth } from "@/lib/client-auth";
+import { getUser, clearAuth } from "@/lib/client-auth";
 import { BookOpen, Search, LogOut, AlertCircle } from "lucide-react";
 
 export default function MemberPage() {
@@ -10,15 +12,30 @@ export default function MemberPage() {
   const [loadingBooks, setLoadingBooks] = useState(true);
   const [error, setError] = useState("");
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    const currentUser = getUser();
-    setUser(currentUser);
-    setRole(getRole());
-    setAuthReady(true);
+    async function loadUserData() {
+      try {
+        const currentUser = await getUser();
+        console.log('👤 User loaded:', currentUser);
+        
+        if (!currentUser) {
+          console.log('❌ No user found, redirecting to login');
+          window.location.href = '/login';
+          return;
+        }
+        
+        setUser(currentUser);
+        setAuthReady(true);
+      } catch (error) {
+        console.error('❌ Failed to load user data:', error);
+        window.location.href = '/login';
+      }
+    }
+
+    loadUserData();
   }, []);
 
   useEffect(() => {
@@ -35,13 +52,19 @@ export default function MemberPage() {
       }
     }
 
-    // Hanya fetch jika role adalah member atau admin
-    if (authReady && (role === "member" || role === "admin")) {
-      loadBooks();
-    } else {
-      setLoadingBooks(false);
+    // Fetch books jika user sudah ada dan role adalah member/admin
+    if (authReady && user) {
+      const roleId = user.role_id;
+      // role_id: 2 = member, 3 = staf, 4 = admin
+      if (roleId === 2 || roleId === 3 || roleId === 4) {
+        loadBooks();
+      } else {
+        // Jika visitor (role_id = 1)
+        console.log('⚠️ User is visitor, redirecting...');
+        setLoadingBooks(false);
+      }
     }
-  }, [role, authReady]);
+  }, [user, authReady]);
 
   const filteredBooks = useMemo(() => {
     if (!searchQuery) return books;
@@ -69,8 +92,8 @@ export default function MemberPage() {
     );
   }
 
-  // If role mismatch
-  if (role !== "member" && role !== "admin") {
+  // Check role - jika bukan member/staf/admin, redirect
+  if (authReady && user && user.role_id === 1) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
         <div className="max-w-lg w-full bg-white shadow-xl rounded-2xl p-8 space-y-4 text-center">
@@ -83,7 +106,7 @@ export default function MemberPage() {
             katalog.
           </p>
           <button
-            onClick={() => (window.location.href = "/Login")}
+            onClick={() => (window.location.href = "/login")}
             className="px-5 py-2 rounded-full bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
           >
             Ke Halaman Login
@@ -118,9 +141,9 @@ export default function MemberPage() {
             </p>
           </div>
           <button
-            onClick={() => {
-              clearAuth();
-              window.location.href = "/Login";
+            onClick={async () => {
+              await clearAuth();
+              window.location.href = "/login";
             }}
             className="self-start md:self-auto inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/10 px-4 py-2 text-sm font-medium hover:bg-white/20 transition"
           >
@@ -220,7 +243,6 @@ export default function MemberPage() {
                       </div>
 
                       <div className="flex gap-4">
-                        {/* Placeholder for cover if we had one, or icon */}
                         <div className="w-16 h-24 bg-slate-100 rounded-lg flex items-center justify-center shrink-0 text-slate-300">
                           {book.sampul_buku ? (
                             <img src={book.sampul_buku} alt={book.judul} className="w-full h-full object-cover rounded-lg" />

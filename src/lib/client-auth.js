@@ -1,60 +1,62 @@
 // src/lib/client-auth.js
 
 /**
- * Get token from cookies (NOT localStorage)
+ * Get current user from server (token is httpOnly, so we can't read it client-side)
  */
-export function getToken() {
-  if (typeof document === 'undefined') return null;
-  
-  const cookies = document.cookie.split(';');
-  const tokenCookie = cookies.find(c => c.trim().startsWith('token='));
-  
-  if (!tokenCookie) {
-    console.warn('⚠️ No token found in cookies');
-    return null;
-  }
-  
-  const token = tokenCookie.split('=')[1];
-  console.log('✅ Token found in cookies');
-  return token;
-}
-
-/**
- * Get user from token (decode JWT from cookies)
- */
-export function getUser() {
-  const token = getToken();
-  if (!token) return null;
-
+export async function getUser() {
   try {
-    // Decode JWT payload (base64)
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(atob(base64));
-    
-    console.log('✅ User decoded from token:', payload);
-    return {
-      id: payload.id,
-      userId: payload.id,
-      username: payload.username,
-      role_id: payload.role_id,
-      email: payload.email
-    };
+    const response = await fetch('/api/auth/me', {
+      method: 'GET',
+      credentials: 'include', // Important: send httpOnly cookies
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      console.warn('⚠️ Failed to fetch user info:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    console.log('✅ User info fetched:', data);
+    return data;
   } catch (error) {
-    console.error('❌ Failed to decode token:', error);
+    console.error('❌ Error fetching user:', error);
     return null;
   }
 }
 
 /**
- * Check if authenticated (has valid token in cookies)
+ * Get role from user info
  */
-export function isAuthenticated() {
-  return !!getToken();
+export async function getRole() {
+  const user = await getUser();
+  if (!user || !user.role_id) return null;
+  
+  // Map role_id to role name
+  const roleMap = {
+    1: 'visitor',
+    2: 'member',
+    3: 'staf',
+    4: 'admin'
+  };
+  
+  const roleName = roleMap[user.role_id] || null;
+  console.log('✅ Role resolved:', roleName);
+  return roleName;
 }
 
 /**
- * Clear auth - call logout API to clear cookie
+ * Check if authenticated
+ */
+export async function isAuthenticated() {
+  const user = await getUser();
+  return !!user;
+}
+
+/**
+ * Clear auth - call logout API to clear httpOnly cookie
  */
 export async function clearAuth() {
   try {
@@ -69,12 +71,17 @@ export async function clearAuth() {
 }
 
 /**
- * DEPRECATED - Don't use these anymore
+ * DEPRECATED - These functions don't work with httpOnly cookies
  */
+export function getToken() {
+  console.error('❌ getToken() cannot read httpOnly cookies. Use getUser() instead.');
+  return null;
+}
+
 export function setToken(token) {
-  console.warn('⚠️ setToken() is deprecated. Tokens are stored in httpOnly cookies.');
+  console.warn('⚠️ setToken() is deprecated. Tokens are stored in httpOnly cookies by the server.');
 }
 
 export function setUser(user) {
-  console.warn('⚠️ setUser() is deprecated. User data is decoded from cookie token.');
+  console.warn('⚠️ setUser() is deprecated. User data comes from server via /api/auth/me.');
 }
